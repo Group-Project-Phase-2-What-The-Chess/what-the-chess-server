@@ -35,12 +35,9 @@ io.on("connection", (socket) => {
     await socket.join(roomId);
 
     rooms.set(roomId, {
-      chess: new Chess(),
-      players: {
-        white: { id: socket.id, username: socket.data.username },
-        black: null,
-      },
-      spectators: [],
+      // <- 3
+      roomId,
+      players: [{ id: socket.id, username: socket.data?.username }],
     });
 
     console.log(
@@ -48,59 +45,16 @@ io.on("connection", (socket) => {
         socket.data.username
       }`
     );
-    callback({ success: true, roomId });
+    callback(roomId);
   });
 
-  socket.on("move", (data, callback) => {
-    const room = rooms.get(data.roomId);
-
-    if (!room) {
-      return callback({ error: true, message: "Room does not exist" });
-    }
-
-    const game = room.chess;
-
-    const turn = game.turn() === "w" ? "white" : "black";
-    if (room.players[turn]?.id !== socket.id) {
-      return callback({ error: true, message: "Not your turn" });
-    }
-
-    const move = game.move(data.move);
-
-    if (!move) {
-      return callback({ error: true, message: "Invalid move" });
-    }
-
-    console.log(
-      `[${new Date().toISOString()}] Move in Room ${data.roomId}: ${data.move}`
-    );
-
-    // Check game-end conditions
-    if (game.in_checkmate()) {
-      io.to(data.roomId).emit("gameOver", {
-        winner: socket.data.username,
-        reason: "checkmate",
-      });
-    } else if (game.in_draw()) {
-      io.to(data.roomId).emit("gameOver", { winner: null, reason: "draw" });
-    }
-
-    io.to(data.roomId).emit("move", { move, board: game.fen() });
-    callback({ success: true, board: game.fen() });
-  });
-});
-
-socket.on("joinRoom", async (args, callback) => {
+  socket.on("joinRoom", async (args, callback) => {
     const room = rooms.get(args.roomId);
     if (!room) {
       return callback({ error: true, message: "Room does not exist" });
     }
 
-    const allUsers = [
-      room.players.white?.username,
-      room.players.black?.username,
-      ...room.spectators.map((s) => s.username),
-    ];
+    const allUsers = [room.players.map((s) => s.username)];
     if (allUsers.includes(socket.data.username)) {
       return callback({
         error: true,
@@ -108,55 +62,54 @@ socket.on("joinRoom", async (args, callback) => {
       });
     }
 
-    if (room.players.white && room.players.black) {
-      room.spectators.push({ id: socket.id, username: socket.data.username });
-      await socket.join(args.roomId);
-
-      console.log(
-        `${socket.data.username} joined Room ${args.roomId} as a spectator`
-      );
-
-      return callback({ success: true, role: "spectator" });
-    }
-
-    const role = room.players.white ? "black" : "white";
-    room.players[role] = { id: socket.id, username: socket.data.username };
-
     await socket.join(args.roomId);
+    const updateRoom = {
+      ...room,
+      players: [
+        ...room.players,
+        { id: socket.id, username: socket.data.username },
+      ],
+    };
 
-    console.log(
-      `${socket.data.username} joined Room ${args.roomId} as ${role}`
-    );
+    rooms.set(args.roomId, updateRoom);
 
-    callback({ success: true, role });
+    callback(updateRoom);
 
-    socket.to(args.roomId).emit("opponentJoined", { players: room.players });
-    io.to(args.roomId).emit("updateBoard", { board: room.chess.fen() });
-});
+    socket.to(args.roomId).emit("opponentJoined", updateRoom);
+  });
 
-socket.on("disconnect", () => {
-  console.log(`${socket.id} disconnected`);
+  socket.on("move", (data) => {
+    socket.to(data.room).emit("move", data.move);
+  });
 
-  rooms.forEach((room, roomId) => {
-    if (room.players.white?.id === socket.id) {
-      room.players.white = null;
-    } else if (room.players.black?.id === socket.id) {
-      room.players.black = null;
-    }
+  socket.on("disconnect", () => {
+    console.log(`${socket.id} disconnected`);
 
-    room.spectators = room.spectators.filter(
-      (spectator) => spectator.id !== socket.id
-    );
+    rooms.forEach((room) => {
+      const user = room.players.find((player) => player.id === socket.id);
 
-    if (
-      !room.players.white &&
-      !room.players.black &&
-      room.spectators.length === 0
-    ) {
-      rooms.delete(roomId);
-    } else {
-      io.to(roomId).emit("playerDisconnected", { players: room.players });
-    }
+      if (user) {
+        if (room.players.length < 2) {
+          rooms.delete(room.roomId);
+        } else {
+          io.to(room.roomId).emit("playerDisconnected", {
+            players: room.players,
+          });
+        }
+      }
+    });
+  });
+
+  socket.on("closeRoom", async (data) => {
+    socket.to(data.roomId).emit("closeRoom", data);
+
+    const clientSockets = await io.in(data.roomId).fetchSockets();
+
+    clientSockets.forEach((s) => {
+      s.leave(data.roomId);
+    });
+
+    rooms.delete(data.roomId);
   });
 });
 
