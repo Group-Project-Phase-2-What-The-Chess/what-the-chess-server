@@ -90,6 +90,50 @@ io.on("connection", (socket) => {
   });
 });
 
+socket.on("joinRoom", async (args, callback) => {
+    const room = rooms.get(args.roomId);
+    if (!room) {
+      return callback({ error: true, message: "Room does not exist" });
+    }
+
+    const allUsers = [
+      room.players.white?.username,
+      room.players.black?.username,
+      ...room.spectators.map((s) => s.username),
+    ];
+    if (allUsers.includes(socket.data.username)) {
+      return callback({
+        error: true,
+        message: "Username already in use in this room",
+      });
+    }
+
+    if (room.players.white && room.players.black) {
+      room.spectators.push({ id: socket.id, username: socket.data.username });
+      await socket.join(args.roomId);
+
+      console.log(
+        `${socket.data.username} joined Room ${args.roomId} as a spectator`
+      );
+
+      return callback({ success: true, role: "spectator" });
+    }
+
+    const role = room.players.white ? "black" : "white";
+    room.players[role] = { id: socket.id, username: socket.data.username };
+
+    await socket.join(args.roomId);
+
+    console.log(
+      `${socket.data.username} joined Room ${args.roomId} as ${role}`
+    );
+
+    callback({ success: true, role });
+
+    socket.to(args.roomId).emit("opponentJoined", { players: room.players });
+    io.to(args.roomId).emit("updateBoard", { board: room.chess.fen() });
+});
+
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
