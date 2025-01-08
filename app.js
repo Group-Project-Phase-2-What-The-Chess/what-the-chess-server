@@ -1,6 +1,5 @@
 const express = require("express");
 const http = require("http");
-const { Chess } = require("chess.js");
 const { Server } = require("socket.io");
 const { v4: uuidV4 } = require("uuid");
 
@@ -29,13 +28,11 @@ io.on("connection", (socket) => {
     socket.data.username = username;
   });
 
-  // createRoom
   socket.on("createRoom", async (callback) => {
     const roomId = uuidV4();
     await socket.join(roomId);
 
     rooms.set(roomId, {
-      // <- 3
       roomId,
       players: [{ id: socket.id, username: socket.data?.username }],
     });
