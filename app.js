@@ -134,6 +134,32 @@ socket.on("joinRoom", async (args, callback) => {
     io.to(args.roomId).emit("updateBoard", { board: room.chess.fen() });
 });
 
+socket.on("disconnect", () => {
+  console.log(`${socket.id} disconnected`);
+
+  rooms.forEach((room, roomId) => {
+    if (room.players.white?.id === socket.id) {
+      room.players.white = null;
+    } else if (room.players.black?.id === socket.id) {
+      room.players.black = null;
+    }
+
+    room.spectators = room.spectators.filter(
+      (spectator) => spectator.id !== socket.id
+    );
+
+    if (
+      !room.players.white &&
+      !room.players.black &&
+      room.spectators.length === 0
+    ) {
+      rooms.delete(roomId);
+    } else {
+      io.to(roomId).emit("playerDisconnected", { players: room.players });
+    }
+  });
+});
+
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
