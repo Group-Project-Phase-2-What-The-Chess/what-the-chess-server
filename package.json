@@ -1,0 +1,27 @@
+{
+  "name": "what-the-chess-server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "npx nodemon app.js",
+    "resdbdev": "npx sequelize db:drop && npx sequelize db:create && npx sequelize db:migrate:undo:all && npx sequelize db:migrate && npx sequelize db:seed:all",
+    "resdbtest": "npx sequelize db:drop --env test && npx sequelize db:create --env test && npx sequelize db:migrate --env test && npx sequelize db:seed:all --env test",
+    "seed": "npx sequelize db:migrate --env test && npx sequelize db:seed:all --env test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1",
+    "uuid": "^11.0.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}
