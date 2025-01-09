@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 3000;
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: "*", // Replace '*' with your frontend domain in production
+  cors: "*",
   methods: ["GET", "POST"],
 });
 
@@ -35,6 +35,7 @@ io.on("connection", (socket) => {
     rooms.set(roomId, {
       roomId,
       players: [{ id: socket.id, username: socket.data?.username }],
+      spectators: [],
     });
 
     console.log(
@@ -51,32 +52,37 @@ io.on("connection", (socket) => {
       return callback({ error: true, message: "Room does not exist" });
     }
 
-    const allUsers = [room.players.map((s) => s.username)];
-    if (allUsers.includes(socket.data.username)) {
+    if (room.players.some((s) => s.username === socket.data.username)) {
       return callback({
         error: true,
         message: "Username already in use in this room",
       });
     }
 
-    await socket.join(args.roomId);
-    const updateRoom = {
-      ...room,
-      players: [
-        ...room.players,
-        { id: socket.id, username: socket.data.username },
-      ],
-    };
+    if (room.players.length < 2) {
+      await socket.join(args.roomId);
 
-    rooms.set(args.roomId, updateRoom);
+      room.players.push({ id: socket.id, username: socket.data.username });
+      rooms.set(args.roomId, room);
 
-    callback(updateRoom);
+      callback(room);
+      socket.to(args.roomId).emit("opponentJoined", room);
+    } else {
+      await socket.join(args.roomId);
+      room.spectators.push({ id: socket.id, username: socket.data.username });
+      rooms.set(args.roomId, room);
 
-    socket.to(args.roomId).emit("opponentJoined", updateRoom);
+      callback(room);
+      socket.emit("spectatorJoined", room);
+      socket.to(args.roomId).emit("spectatorJoined", room);
+    }
   });
 
   socket.on("move", (data) => {
-    socket.to(data.room).emit("move", data.move);
+    const room = rooms.get(data.room);
+    if (room.players.some((p) => p.id === socket.id)) {
+      socket.to(data.room).emit("move", data.move);
+    }
   });
 
   socket.on("disconnect", () => {
@@ -95,6 +101,25 @@ io.on("connection", (socket) => {
         }
       }
     });
+  });
+
+  socket.on("leaveRoom", async (data) => {
+    const { roomId } = data;
+    const room = rooms.get(roomId);
+    if (room) {
+      const playerIndex = room.players.findIndex((p) => p.id === socket.id);
+      if (playerIndex !== -1) {
+        room.players.splice(playerIndex, 1);
+
+        if (room.players.length < 2) {
+          rooms.delete(roomId);
+        }
+
+        io.to(roomId).emit("playerDisconnected", {
+          username: socket.data.username,
+        });
+      }
+    }
   });
 
   socket.on("closeRoom", async (data) => {
