@@ -1,3 +1,7 @@
+if (process.env.NODE_ENV !== "production") {
+  require("dotenv").config();
+}
+
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -8,7 +12,7 @@ const PORT = process.env.PORT || 3000;
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: "*",
+  cors: "https://what-the-chess-52a3d.web.app/",
   methods: ["GET", "POST"],
 });
 
@@ -90,6 +94,9 @@ io.on("connection", (socket) => {
 
     rooms.forEach((room) => {
       const user = room.players.find((player) => player.id === socket.id);
+      const spectator = room.spectators.find(
+        (spectator) => spectator.id === socket.id
+      );
 
       if (user) {
         if (room.players.length < 2) {
@@ -100,6 +107,18 @@ io.on("connection", (socket) => {
           });
         }
       }
+
+      if (spectator) {
+        room.spectators = room.spectators.filter(
+          (spec) => spec.id !== socket.id
+        );
+
+        console.log(`Spectator ${socket.id} removed from room ${room.roomId}`);
+
+        io.to(room.roomId).emit("spectatorDisconnected", {
+          spectators: room.spectators,
+        });
+      }
     });
   });
 
@@ -108,6 +127,11 @@ io.on("connection", (socket) => {
     const room = rooms.get(roomId);
     if (room) {
       const playerIndex = room.players.findIndex((p) => p.id === socket.id);
+
+      const spectatorIndex = room.spectators.findIndex(
+        (spec) => spec.id === socket.id
+      );
+
       if (playerIndex !== -1) {
         room.players.splice(playerIndex, 1);
 
@@ -117,6 +141,17 @@ io.on("connection", (socket) => {
 
         io.to(roomId).emit("playerDisconnected", {
           username: socket.data.username,
+        });
+      }
+
+      if (spectatorIndex !== -1) {
+        room.spectators.splice(spectatorIndex, 1);
+
+        console.log(`Spectator ${socket.id} left room ${roomId}`);
+
+        io.to(roomId).emit("spectatorDisconnected", {
+          username: socket.data.username,
+          spectators: room.spectators,
         });
       }
     }
